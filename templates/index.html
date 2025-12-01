@@ -1,16 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Drowsiness Detection</title>
-  <style>
-    body { text-align: center; background: #111; color: white; }
-    h1 { margin-top: 20px; }
-    img { border: 5px solid #00f; border-radius: 10px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Drowsiness Detector</title>
+
+    <style>
+        body { background: #000; color: #fff; text-align: center; }
+        canvas { width: 90%; max-width: 400px; border-radius: 10px; }
+        #status { font-size: 24px; margin-top: 20px; }
+        button { padding: 10px 20px; margin-bottom: 15px; }
+    </style>
 </head>
+
 <body>
-  <h1>Live Drowsiness Detection</h1>
-  <img src="{{ url_for('video_feed') }}" width="720" height="540">
+
+<h1>Drowsiness Detector</h1>
+
+<button id="enableAudioBtn">Enable Alarm</button>
+
+<!-- Hidden raw video -->
+<video id="video" autoplay playsinline style="display:none;"></video>
+
+<!-- Display canvas -->
+<canvas id="canvas"></canvas>
+
+<h2 id="status">Status: Loading...</h2>
+
+<!-- Alarm Sound -->
+<audio id="alarmSound" src="/static/alarm.wav" preload="auto" loop></audio>
+
+<script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const statusText = document.getElementById("status");
+
+    const alarm = document.getElementById("alarmSound");
+    const enableBtn = document.getElementById("enableAudioBtn");
+
+    // Enable alarm sound after user interaction
+    enableBtn.addEventListener("click", () => {
+        alarm.play().then(() => {
+            alarm.pause();
+            alarm.currentTime = 0;
+            enableBtn.style.display = "none";
+            alert("Alarm Enabled");
+        });
+    });
+
+    // Start camera
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => { 
+            video.srcObject = stream;
+        })
+        .catch(err => {
+            statusText.innerText = "Camera permission denied!";
+        });
+
+    // Process frames
+    setInterval(() => {
+        if (!video.videoWidth) return;
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+
+        const frame = canvas.toDataURL("image/jpeg");
+
+        fetch("/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: frame })
+        })
+        .then(res => res.json())
+        .then(data => {
+
+            statusText.innerHTML =
+                `Status: <span style="color:${data.status === "Drowsy" ? "red" : "lime"}">${data.status}</span>
+                <br>EAR: ${data.ear}`;
+
+            // Alarm logic
+            if (data.status === "Drowsy") {
+                if (alarm.paused) alarm.play();
+            } else {
+                alarm.pause();
+                alarm.currentTime = 0;
+            }
+        });
+
+    }, 300);
+</script>
+
 </body>
 </html>
