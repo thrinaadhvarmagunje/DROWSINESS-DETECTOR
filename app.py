@@ -14,17 +14,18 @@ def index():
 def predict():
     data = request.get_json()
 
-    # Extract Base64 image
     img_data = data["image"].split(",")[1]
     img_bytes = base64.b64decode(img_data)
 
-    # Convert to OpenCV image
     img_array = np.frombuffer(img_bytes, np.uint8)
     frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
-    status, ear = process_frame(frame)
+    status, conf = process_frame(frame)
 
-    return jsonify({"status": status, "ear": round(ear, 2)})
+    return jsonify({
+        "status": status,
+        "confidence": conf
+    })
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000)
