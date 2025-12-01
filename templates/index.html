@@ -7,8 +7,7 @@
     <style>
         body { background: #000; color: #fff; text-align: center; }
         canvas { width: 90%; max-width: 400px; border-radius: 10px; }
-        #status { font-size: 24px; margin-top: 20px; }
-        button { padding: 10px 20px; margin-bottom: 15px; }
+        button { padding: 10px 20px; margin-top: 10px; }
     </style>
 </head>
 
@@ -18,15 +17,12 @@
 
 <button id="enableAudioBtn">Enable Alarm</button>
 
-<!-- Hidden raw video -->
 <video id="video" autoplay playsinline style="display:none;"></video>
 
-<!-- Display canvas -->
 <canvas id="canvas"></canvas>
 
 <h2 id="status">Status: Loading...</h2>
 
-<!-- Alarm Sound -->
 <audio id="alarmSound" src="/static/alarm.wav" preload="auto" loop></audio>
 
 <script>
@@ -34,30 +30,22 @@
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const statusText = document.getElementById("status");
-
     const alarm = document.getElementById("alarmSound");
-    const enableBtn = document.getElementById("enableAudioBtn");
+    const btn = document.getElementById("enableAudioBtn");
 
-    // Enable alarm sound after user interaction
-    enableBtn.addEventListener("click", () => {
+    btn.addEventListener("click", () => {
         alarm.play().then(() => {
             alarm.pause();
             alarm.currentTime = 0;
-            enableBtn.style.display = "none";
+            btn.style.display = "none";
             alert("Alarm Enabled");
         });
     });
 
-    // Start camera
     navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => { 
-            video.srcObject = stream;
-        })
-        .catch(err => {
-            statusText.innerText = "Camera permission denied!";
-        });
+        .then(stream => video.srcObject = stream)
+        .catch(() => statusText.innerText = "Camera Access Blocked");
 
-    // Process frames
     setInterval(() => {
         if (!video.videoWidth) return;
 
@@ -75,11 +63,10 @@
         .then(res => res.json())
         .then(data => {
 
-            statusText.innerHTML =
-                `Status: <span style="color:${data.status === "Drowsy" ? "red" : "lime"}">${data.status}</span>
-                <br>EAR: ${data.ear}`;
+            statusText.innerHTML = 
+                `Status: <span style="color:${data.status==='Drowsy'?'red':'lime'}">${data.status}</span>
+                 <br>Confidence: ${data.confidence}`;
 
-            // Alarm logic
             if (data.status === "Drowsy") {
                 if (alarm.paused) alarm.play();
             } else {
@@ -87,7 +74,6 @@
                 alarm.currentTime = 0;
             }
         });
-
     }, 300);
 </script>
 
