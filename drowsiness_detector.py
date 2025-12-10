@@ -3,15 +3,15 @@ import numpy as np
 import mediapipe as mp
 from math import dist
 
-# EAR config
-EAR_THRESHOLD = 0.20          # eye aspect ratio below this => eye considered closed
-FRAME_INTERVAL_SEC = 0.3      # must match JS setInterval in index.html
-ALARM_AFTER_SEC = 5           # seconds of continuous low EAR
+# ===== EAR CONFIG =====
+EAR_THRESHOLD = 0.20          # below this ⇒ eyes considered closed
+FRAME_INTERVAL_SEC = 0.3      # must match JS setInterval() in ms (300ms)
+ALARM_AFTER_SEC = 5.0         # seconds of continuous low EAR to trigger drowsy
 CONSEC_FRAMES = int(ALARM_AFTER_SEC / FRAME_INTERVAL_SEC)
 
-counter = 0  # number of consecutive "closed eye" frames
+counter = 0  # number of consecutive "eyes closed" frames
 
-# Mediapipe FaceMesh init
+# ===== MEDIAPIPE FACEMESH =====
 mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     static_image_mode=False,
@@ -21,13 +21,16 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_tracking_confidence=0.5
 )
 
-# indices for eyes in FaceMesh
-LEFT_EYE_IDX  = [33, 160, 158, 133, 153, 144]
+# Indices for eye landmarks in MediaPipe FaceMesh (6 points each)
+LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
 
 
 def eye_aspect_ratio(eye_points):
-    """eye_points: list[(x,y)] of 6 landmarks"""
+    """
+    eye_points: list[(x, y)] of 6 points
+    EAR = (‖p2-p6‖ + ‖p3-p5‖) / (2 * ‖p1-p4‖)
+    """
     A = dist(eye_points[1], eye_points[5])
     B = dist(eye_points[2], eye_points[4])
     C = dist(eye_points[0], eye_points[3])
@@ -35,10 +38,23 @@ def eye_aspect_ratio(eye_points):
     return ear
 
 
+def _landmarks_to_points(landmarks, indices, width, height):
+    pts = []
+    for i in indices:
+        lm = landmarks[i]
+        x = int(lm.x * width)
+        y = int(lm.y * height)
+        pts.append((x, y))
+    return pts
+
+
 def process_frame(frame):
     """
-    Input:  BGR frame (numpy array)
-    Output: (status:str, ear:float)
+    Input:  frame (numpy array, BGR)
+    Output: (status: str, ear: float)
+
+    status ∈ {"Awake", "Drowsy", "No face"}
+    ear    ∈ [0, 1] approx
     """
     global counter
 
@@ -52,23 +68,14 @@ def process_frame(frame):
     results = face_mesh.process(rgb)
 
     if not results.multi_face_landmarks:
-        # No face found → reset
+        # no face detected
         counter = 0
         return "No face", 0.0
 
     face_landmarks = results.multi_face_landmarks[0]
 
-    def landmarks_to_points(indices):
-        pts = []
-        for i in indices:
-            lm = face_landmarks.landmark[i]
-            x = int(lm.x * w)
-            y = int(lm.y * h)
-            pts.append((x, y))
-        return pts
-
-    left_eye_pts = landmarks_to_points(LEFT_EYE_IDX)
-    right_eye_pts = landmarks_to_points(RIGHT_EYE_IDX)
+    left_eye_pts = _landmarks_to_points(face_landmarks.landmark, LEFT_EYE_IDX, w, h)
+    right_eye_pts = _landmarks_to_points(face_landmarks.landmark, RIGHT_EYE_IDX, w, h)
 
     left_ear = eye_aspect_ratio(left_eye_pts)
     right_ear = eye_aspect_ratio(right_eye_pts)
