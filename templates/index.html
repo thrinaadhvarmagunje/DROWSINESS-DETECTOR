@@ -2,79 +2,101 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Drowsiness Detector</title>
-
+    <title>Drowsiness Detector (EAR)</title>
     <style>
-        body { background: #000; color: #fff; text-align: center; }
-        canvas { width: 90%; max-width: 400px; border-radius: 10px; }
-        button { padding: 10px 20px; margin-top: 10px; }
+        body { background:#000; color:#fff; text-align:center; }
+        canvas { width:90%; max-width:420px; border-radius:12px; margin-top:10px; }
+        h1 { margin-top:20px; }
+        button { padding:10px 20px; margin-top:10px; }
+        #status { font-size:22px; margin-top:15px; }
     </style>
 </head>
-
 <body>
 
-<h1>Drowsiness Detector</h1>
+<h1>Drowsiness Detector (EAR)</h1>
 
-<button id="enableAudioBtn">Enable Alarm</button>
+<button id="toggleAlarm">Enable Alarm</button>
 
+<br>
 <video id="video" autoplay playsinline style="display:none;"></video>
-
 <canvas id="canvas"></canvas>
 
 <h2 id="status">Status: Loading...</h2>
 
-<audio id="alarmSound" src="/static/alarm.wav" preload="auto" loop></audio>
+<audio id="alarm" src="/static/alarm.wav" preload="auto" loop></audio>
 
 <script>
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const statusText = document.getElementById("status");
-    const alarm = document.getElementById("alarmSound");
-    const btn = document.getElementById("enableAudioBtn");
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusText = document.getElementById("status");
+const alarm = document.getElementById("alarm");
+const toggleBtn = document.getElementById("toggleAlarm");
 
-    btn.addEventListener("click", () => {
-        alarm.play().then(() => {
-            alarm.pause();
-            alarm.currentTime = 0;
-            btn.style.display = "none";
-            alert("Alarm Enabled");
-        });
+let alarmEnabled = false;
+
+// Unlock audio + toggle alarm
+toggleBtn.addEventListener("click", async () => {
+    try {
+        // first user interaction unlocks audio
+        await alarm.play();
+        alarm.pause();
+        alarm.currentTime = 0;
+    } catch (e) {
+        console.log("Audio unlock:", e);
+    }
+
+    alarmEnabled = !alarmEnabled;
+    if (alarmEnabled) {
+        toggleBtn.textContent = "Disable Alarm";
+    } else {
+        toggleBtn.textContent = "Enable Alarm";
+        alarm.pause();
+        alarm.currentTime = 0;
+    }
+});
+
+// Start camera
+navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => video.srcObject = stream)
+    .catch(err => {
+        console.error(err);
+        statusText.innerText = "Camera access blocked";
     });
 
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => video.srcObject = stream)
-        .catch(() => statusText.innerText = "Camera Access Blocked");
+// Send image every 300ms (must match FRAME_INTERVAL_SEC in Python)
+setInterval(() => {
+    if (!video.videoWidth) return;
 
-    setInterval(() => {
-        if (!video.videoWidth) return;
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
 
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
+    const frame = canvas.toDataURL("image/jpeg");
 
-        const frame = canvas.toDataURL("image/jpeg");
+    fetch("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: frame })
+    })
+    .then(res => res.json())
+    .then(data => {
+        const color = data.status === "Drowsy" ? "red" :
+                      data.status === "Awake" ? "lime" : "yellow";
 
-        fetch("/predict", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ image: frame })
-        })
-        .then(res => res.json())
-        .then(data => {
+        statusText.innerHTML =
+            `Status: <span style="color:${color}">${data.status}</span><br>` +
+            `EAR: ${data.ear}`;
 
-            statusText.innerHTML = 
-                `Status: <span style="color:${data.status==='Drowsy'?'red':'lime'}">${data.status}</span>
-                 <br>Confidence: ${data.confidence}`;
-
-            if (data.status === "Drowsy") {
-                if (alarm.paused) alarm.play();
-            } else {
-                alarm.pause();
-                alarm.currentTime = 0;
-            }
-        });
-    }, 300);
+        if (alarmEnabled && data.status === "Drowsy") {
+            if (alarm.paused) alarm.play();
+        } else {
+            alarm.pause();
+            alarm.currentTime = 0;
+        }
+    })
+    .catch(err => console.error("Predict error:", err));
+}, 300);
 </script>
 
 </body>
